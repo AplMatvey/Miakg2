@@ -1,103 +1,96 @@
 #include "draw.h"
 
 #include <SDL.h>
-#include <stdio.h>
-#include <string>
-#include <cassert>
+#include <cstdio>
 
-bool init();
-void close();
+namespace {
 
-SDL_Window *gWindow = NULL;
-SDL_Renderer *gRenderer = NULL;
-SDL_Texture *gTexture = NULL;
-SDL_Surface *loadedSurface = NULL;
+SDL_Window *window = nullptr;
+SDL_Renderer *renderer = nullptr;
+SDL_Texture *texture = nullptr;
+SDL_Surface *surface = nullptr;
 
 bool init()
 {
-  bool success = true;
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-    printf("SDL could not initialize! SDL Error: %s\n", SDL_GetError());
-    success = false;
-  } else {
-    gWindow = SDL_CreateWindow("AOKG Lab 1", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    if (gWindow == NULL) {
-      printf("Window could not be created! SDL Error: %s\n", SDL_GetError());
-      success = false;
-    } else {
-      gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_SOFTWARE);
-      if (gRenderer == NULL) {
-        printf("Renderer could not be created! SDL Error: %s\n", SDL_GetError());
-        success = false;
-      } else {
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-      }
-    }
+    std::printf("SDL init error: %s\n", SDL_GetError());
+    return false;
   }
-  return success;
+
+  window = SDL_CreateWindow(
+    "Lab 2, variant 4 | LMB: rotation point, Q/E: rotate, +/- or wheel: field zoom",
+    SDL_WINDOWPOS_CENTERED,
+    SDL_WINDOWPOS_CENTERED,
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT,
+    SDL_WINDOW_SHOWN);
+  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+  surface = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_ARGB8888);
+
+  if (window == nullptr || renderer == nullptr || surface == nullptr) {
+    std::printf("SDL object creation error: %s\n", SDL_GetError());
+    return false;
+  }
+
+  texture = SDL_CreateTexture(renderer,
+                              SDL_PIXELFORMAT_ARGB8888,
+                              SDL_TEXTUREACCESS_STREAMING,
+                              SCREEN_WIDTH,
+                              SCREEN_HEIGHT);
+  return texture != nullptr;
 }
 
-void close()
+void close_program()
 {
-  SDL_DestroyTexture(gTexture);
-  gTexture = NULL;
-  SDL_DestroyRenderer(gRenderer);
-  SDL_DestroyWindow(gWindow);
-  gWindow = NULL;
-  gRenderer = NULL;
+  SDL_DestroyTexture(texture);
+  SDL_FreeSurface(surface);
+  SDL_DestroyRenderer(renderer);
+  SDL_DestroyWindow(window);
   SDL_Quit();
 }
 
-int main(int argc, char *argv[])
+}
+
+int main(int, char **)
 {
   if (!init()) {
-    printf("Failed to initialize!\n");
-  } else {
-    loadedSurface = SDL_CreateRGBSurface(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
-      0x00FF0000,// R
-      0x0000FF00,// G
-      0x000000FF,// B
-      0x00000000);// alpha
+    close_program();
+    return 1;
+  }
 
-    gTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
+  reset_scene();
+  bool quit = false;
 
-    if (NULL == gTexture) {
-      printf("Failed to load media!\n");
-    } else {
-      bool quit = false;
-      SDL_Event e;
-
-      while (!quit) {
-        while (SDL_PollEvent(&e) != 0) {
-          if (SDL_QUIT == e.type) {
-            quit = true;
-          }
-          if (SDL_KEYDOWN == e.type) {
-            switch (e.key.keysym.scancode) {
-            case SDL_SCANCODE_KP_PLUS:
-              printf("SDL_SCANCODE_KP_PLUS have been presssed\n");
-              break;
-            case SDL_SCANCODE_KP_MINUS:
-              printf("SDL_SCANCODE_KP_MINUS have been presssed\n");
-              break;
-            case SDL_SCANCODE_ESCAPE:
-              quit = true;
-              break;
-            default:
-              break;
-            }
-          }
+  while (!quit) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event) != 0) {
+      if (event.type == SDL_QUIT) {
+        quit = true;
+      } else if (event.type == SDL_KEYDOWN) {
+        if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+          quit = true;
+        } else {
+          handle_key(event.key.keysym.scancode);
         }
-        SDL_RenderClear(gRenderer);
-
-        draw(loadedSurface);
-
-        SDL_UpdateTexture(gTexture, NULL, loadedSurface->pixels, loadedSurface->pitch);
-        SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
-        SDL_RenderPresent(gRenderer);
+      } else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                 event.button.button == SDL_BUTTON_LEFT) {
+        set_rotation_center(event.button.x, event.button.y);
+      } else if (event.type == SDL_MOUSEMOTION &&
+                 (event.motion.state & SDL_BUTTON_RMASK) != 0) {
+        handle_mouse_drag(event.motion.xrel, event.motion.yrel);
+      } else if (event.type == SDL_MOUSEWHEEL) {
+        handle_mouse_wheel(event.wheel.y);
       }
     }
+
+    draw(surface);
+    SDL_UpdateTexture(texture, nullptr, surface->pixels, surface->pitch);
+    SDL_RenderClear(renderer);
+    SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+    SDL_RenderPresent(renderer);
+    SDL_Delay(16);
   }
-  close();
+
+  close_program();
   return 0;
 }
